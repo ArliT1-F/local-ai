@@ -9,6 +9,13 @@ provider route in `dsh/cordis.patch.yml` already points at.
 | **Serverless endpoint** (official `runpod/worker-vllm`) | per second, scales to zero | 20–90 s on first request | intermittent/agentic use, the cheap default |
 | **GPU pod** (`vllm/vllm-openai`) | per hour, always on | one model load, then always warm | heavy daily use, evals, long sessions |
 
+Before you click anything, you can also give the job to your coding agent: see
+[`agent-setup.md`](./agent-setup.md) and `bash install-agent-skills.sh <agent>`
+to install the official Runpod skills and MCP server
+(<https://agents.runpod.io/>). With those in place the deploy below becomes one
+sentence of chat, and the agent reads GPU stock and quotes the hourly cost
+before it creates anything billable.
+
 ---
 
 ## A. Serverless (recommended if you are cost-sensitive)
