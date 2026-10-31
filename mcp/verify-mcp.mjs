@@ -46,12 +46,29 @@ const SCRUB = /KEY|PASSWORD|SECRET|TOKEN/i;
  * process starts; these prove the credential and the browser actually work.
  * `firecrawl_search` bills a tiny amount of credit -- that is the point.
  */
+const TESTAPP_URL = process.env.TESTAPP_URL ?? 'http://127.0.0.1:8787';
+
+/** Is the local test app up right now? It is optional, so don't fail on it. */
+async function reachable(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
+
 const LIVE_CHECKS = {
-  playwright: () => ({
+  // The test app is optional (step 8 SKIPs it when it isn't running), so a
+  // stopped test app must not look like a broken browser: fall back to a
+  // data: URL, which still proves the browser launched and rendered a page.
+  playwright: async () => ({
     tool: 'browser_navigate',
-    args: { url: process.env.TESTAPP_URL ?? 'http://127.0.0.1:8787' },
+    args: {
+      url: (await reachable(TESTAPP_URL)) ? TESTAPP_URL : 'data:text/html,<h1>mcp verify</h1>',
+    },
   }),
-  firecrawl: () => ({ tool: 'firecrawl_search', args: { query: 'example.com', limit: 1 } }),
+  firecrawl: async () => ({ tool: 'firecrawl_search', args: { query: 'example.com', limit: 1 } }),
 };
 
 const argv = process.argv.slice(2);
@@ -150,11 +167,18 @@ async function verify(entry) {
     const { tools } = await client.listTools();
 
     let liveNote = '';
-    const live = flag('live') ? LIVE_CHECKS[name]?.() : undefined;
+    const live = flag('live') ? await LIVE_CHECKS[name]?.() : undefined;
     if (live) {
       const known = tools.some((t) => t.name === live.tool);
       if (!known) throw new Error(`live check: tool "${live.tool}" not published by the server`);
-      const call = await client.callTool(live, undefined, { timeout: 120_000 });
+      // MCP wire params are { name, arguments } -- passing the internal
+      // { tool, args } shape here makes the server reject the request with
+      // "expected string, received undefined" at params.name (-32602/-32603).
+      const call = await client.callTool(
+        { name: live.tool, arguments: live.args },
+        undefined,
+        { timeout: 120_000 },
+      );
       if (call.isError) {
         const text = (call.content ?? []).map((c) => c.text ?? '').join(' ').slice(0, 300);
         throw new Error(`live check: ${live.tool} failed -- ${text}`);
