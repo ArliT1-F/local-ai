@@ -173,6 +173,28 @@ runpodctl update && runpodctl user          # always update first; old builds ha
 
 ---
 
+## Do I need to change any settings in the Runpod console?
+
+Short answer: **not for this onboarding.** The MCP server authenticates as you
+via OAuth, so there is nothing to paste, enable, or configure on the website —
+the only page you touch is the consent screen.
+
+| You want to… | Console work needed |
+| - | - |
+| Let your agent manage pods/endpoints through the MCP | **None.** Sign in when the agent asks. |
+| Use `runpodctl` / a script / CI | **Settings → Credentials → API key** (`console.runpod.io/user/settings`) → export as `RUNPOD_API_KEY` |
+| Fall back from OAuth to a key-based MCP | Same API key, in the `Authorization` header (step 2) |
+| Actually serve the abliterated model (this repo's goal) | **Yes** — the endpoint/pod form fields, see step 4 |
+| Run a GPU pod | Pod form: image/template, GPU class, disks, HTTP port `8000`, `API_KEY` env |
+
+One thing to set once, before anything billable: **billing** (a card or credit
+on `console.runpod.io/user/settings`) — endpoints and pods won't start without
+it. Everything else on that page is optional. Check what your billing options
+look like under Settings → Billing if you want a hard ceiling before you leave
+anything running.
+
+---
+
 ## Step 4 — The Runpod part this repo actually needs
 
 The MCP gives you console power in chat. This repo's *goal* is narrower: an
@@ -180,8 +202,9 @@ OpenAI-compatible vLLM endpoint serving
 `huihui-ai/Huihui-Qwen3-8B-abliterated-v2`, wired to the `runpod` provider route
 in `dsh/cordis.patch.yml`. Both paths are in [`README.md`](./README.md):
 
-- **Serverless** (cheap, scales to zero, 20–90 s cold start) → import
-  `runpod-workers/worker-vllm` from GitHub, 24 GB pool, then
+- **Serverless** (cheap, scales to zero, 20–90 s cold start) → Hub →
+  `runpod-workers/worker-vllm` → **Deploy**, 24 GB pool, model
+  `huihui-ai/Huihui-Qwen3-8B-abliterated-v2`, then
   `RUNPOD_LLM_BASE_URL=https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1`.
 - **GPU pod** (always warm, bills hourly) → `MODEL=... bash runpod/start-vllm.sh`
   inside the pod, then `RUNPOD_LLM_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net/v1`.
@@ -190,11 +213,19 @@ Either way it lands in `.env` as:
 
 ```sh
 RUNPOD_LLM_BASE_URL=...
-RUNPOD_LLM_API_KEY=<the API_KEY you set on the endpoint/pod>
+RUNPOD_LLM_API_KEY=...
 ```
 
-`.env` is git-ignored. Always set `API_KEY`: a pod's proxy URL is world-reachable
-and unauthenticated by default.
+What goes in `RUNPOD_LLM_API_KEY` differs by path and it matters:
+
+| Path | `RUNPOD_LLM_API_KEY` is | Why |
+| - | - | - |
+| Serverless endpoint | **your Runpod API key** (`console.runpod.io/user/settings`) | there is no `API_KEY` env var on the worker; Runpod authorizes the `/openai/v1` path itself |
+| GPU pod | the `API_KEY` you passed to `start-vllm.sh` (it prints one) | there it becomes `vllm serve --api-key` |
+
+`.env` is git-ignored. On a pod, always set `API_KEY`: a pod's proxy URL is
+world-reachable and unauthenticated by default. On Serverless you don't have a
+choice — it's already gated by your Runpod key.
 
 With the skills installed, you can hand the whole thing to your agent instead:
 

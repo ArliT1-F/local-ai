@@ -20,36 +20,47 @@ before it creates anything billable.
 
 ## A. Serverless (recommended if you are cost-sensitive)
 
-1. Console → **Serverless → New Endpoint → Import from GitHub**, use
-   `runpod-workers/worker-vllm` (the official vLLM worker), GPU pool
-   **24 GB** (L4 / A5000 / 3090 class).
-2. Environment variables:
+1. Console → **Hub** → [`runpod-workers/worker-vllm`](https://console.runpod.io/hub/runpod-workers/worker-vllm)
+   → **Deploy** (latest release). GPU pool **24 GB** (L4 / A5000 / 3090 class).
+2. **Model** field: `huihui-ai/Huihui-Qwen3-8B-abliterated-v2`.
+3. **Advanced** → *Max Model Length* `40960`, *GPU Memory Utilization* `0.92`.
+4. **Environment variables** (the first two are the same fields as step 3):
 
    ```
-   MODEL_NAME=huihui-ai/Huihui-Qwen3-8B-abliterated-v2
    MAX_MODEL_LEN=40960
    GPU_MEMORY_UTILIZATION=0.92
-   ENABLE_AUTO_TOOL_CHOICE=1
+   ENABLE_AUTO_TOOL_CHOICE=true
    TOOL_CALL_PARSER=hermes
    MAX_CONCURRENCY=8
-   API_KEY=<long random string>
    ```
 
-3. Deploy, then copy the endpoint id. Your OpenAI-compatible base URL is:
+   `TOOL_CALL_PARSER=hermes` + `ENABLE_AUTO_TOOL_CHOICE=true` is what the Runpod
+   docs list for the Qwen3 family, and what lets the harness's agent loop
+   actually call tools. Any `vllm serve` flag works as `UPPER_SNAKE_CASE`, and
+   `VLLM_EXTRA_ARGS` passes flags that have no variable yet.
 
-   ```
-   https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1
-   ```
+   > There is **no `API_KEY` environment variable on the worker** — it is not in
+   > the [vLLM environment variable reference](https://docs.runpod.io/serverless/vllm/environment-variables),
+   > so setting one does nothing. Auth on Serverless is Runpod's own: calls are
+   > authorized with **your Runpod API key**. (`API_KEY` *is* real on the GPU-pod
+   > path below, because there it becomes `vllm serve --api-key`.)
 
-4. In `.env`:
+5. **Create Endpoint**, then copy the endpoint id. Base URL and key for `.env`:
 
    ```sh
    RUNPOD_LLM_BASE_URL=https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1
-   RUNPOD_LLM_API_KEY=<the same API_KEY>
+   RUNPOD_LLM_API_KEY=<your Runpod API key from console.runpod.io/user/settings>
    ```
+
+Cost knobs on the same page: *Max workers* (a scale-to-zero endpoint with 0 min
+workers bills only while serving), *idle timeout*, and *FlashBoot*. The sum of
+max workers across your endpoints is capped by a balance-tiered quota (5 to
+start), so a second endpoint at the default can be refused.
 
 Add a **network volume** (~30 GB, `$0.07/GB/mo` standard) if you want the
 model cached between cold starts; otherwise each cold worker re-downloads it.
+The vLLM worker reads it at `/runpod-volume` (`BASE_PATH`) — Runpod calls this
+the "cached models" deployment option.
 
 ---
 
