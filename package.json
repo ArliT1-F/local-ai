@@ -1,0 +1,26 @@
+{
+  "name": "local-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local AI agent stack: DeepSeek Harness + Abliterated Large Flash, with Playwright and Firecrawl MCP servers plus nuclei for local-only security testing.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "start": "bash scripts/start-harness.sh",
+    "verify": "bash scripts/verify-all.sh",
+    "verify:mcp": "node mcp/verify-mcp.mjs",
+    "testapp": "node security/testapp/server.js",
+    "nuclei:install": "bash security/nuclei/install-nuclei.sh",
+    "nuclei:scan": "bash security/nuclei/scan.sh"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.5",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@playwright/mcp": "0.0.83",
+    "firecrawl-mcp": "3.36.0",
+    "yaml": "2.9.1"
+  }
+}

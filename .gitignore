@@ -1,0 +1,23 @@
+# --- secrets -------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- harness runtime state (contains credentials + session history) ------
+.dsh-home/
+.dsh/
+profiles/
+sessions/
+
+# --- application security results ---------------------------------------
+security/findings/
+security/testapp/.runtime/
+
+# --- local tooling -------------------------------------------------------
+node_modules/
+npm-debug.log*
+*.log
+.cache/
+bin/
+tmp/
+.DS_Store
