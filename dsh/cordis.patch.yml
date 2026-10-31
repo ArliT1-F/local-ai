@@ -1,0 +1,142 @@
+# DeepSeek Harness (dsh) patch layer -- profile "web".
+#
+# This file is the single source of truth for:
+#   1. the LLM provider routes  (Abliteration hosted API + optional RunPod vLLM)
+#   2. the MCP servers         (Playwright + Firecrawl)
+#
+# scripts/setup.sh links it to $DSH_HOME/profiles/web/cordis.patch.yml, and dsh
+# hot-reloads it, so edits here apply without a restart.
+#
+# Secrets are NEVER written here: `apiKeyEnv` names an environment variable and
+# `!!js process.env.X` is evaluated at load time. scripts/start-harness.sh
+# exports .env before booting.
+#
+# Reference: https://docs.abliteration.ai/integrations/deepseek-harness
+#            node_modules/@deepseek-ai/dsh-llm-pi-ai/README.md   (provider fields)
+#            node_modules/@deepseek-ai/dsh-mcp-client/README.md  (MCP fields)
+
+# ---------------------------------------------------------------------------
+# 1. Providers
+# ---------------------------------------------------------------------------
+# `llm-pi-ai` already exists in every shipped profile, so this entry *merges*
+# into it (id-targeted patch) instead of adding a second adapter.
+- id: llm-pi-ai
+  config:
+    providers:
+      # --- Hosted Abliteration API -------------------------------------
+      abliteration:
+        displayName: Abliteration
+        apiKeyEnv: ABLIT_KEY
+        api: openai-completions
+        baseURL: https://api.abliteration.ai/v1
+        # Default reasoning depth for every model on this route.
+        # Override per conversation from the harness Effort menu.
+        reasoning: high
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          # The model this setup was built around.
+          - id: abliterated-model-large-flash
+            name: Abliterated Large Flash
+            contextWindow: 1048576
+            maxTokens: 65536 # API ceiling is 262144; 64k keeps requests sane
+            input: [text, image]
+            reasoningEfforts:
+              off: none
+              low: low
+              high: high
+              max: max
+
+          # Same route, other models -- handy for comparing behaviour.
+          - id: abliterated-model
+            name: Abliterated Model
+            contextWindow: 262144
+            maxTokens: 32768
+            input: [text, image]
+            reasoningEfforts:
+              off: none
+              low: low
+              high: high
+              max: xhigh # this model rejects the literal "max"
+
+          - id: abliterated-model-large-v2
+            name: Abliterated Large v2
+            contextWindow: 1000000
+            maxTokens: 32768
+            input: [text]
+            reasoningEfforts:
+              low: low
+              high: high
+              max: max # cannot disable reasoning; "off" is not offered
+
+      # --- Self-hosted abliterated model on RunPod (step 3) ------------
+      # Any OpenAI-compatible vLLM endpoint works. Left disabled until you
+      # set RUNPOD_LLM_BASE_URL in .env, so a missing pod never breaks boot.
+      runpod:
+        displayName: RunPod (self-hosted)
+        apiKeyEnv: RUNPOD_LLM_API_KEY
+        api: openai-completions
+        baseURL: !!js process.env.RUNPOD_LLM_BASE_URL || 'http://127.0.0.1:8000/v1'
+        reasoning: low
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          # Must equal the model id vLLM serves (see runpod/start-vllm.sh).
+          - id: huihui-ai/Huihui-Qwen3-8B-abliterated-v2
+            name: Qwen3-8B abliterated (local)
+            contextWindow: 40960
+            maxTokens: 8192
+            input: [text]
+            reasoningEfforts: false
+
+# ---------------------------------------------------------------------------
+# 2. MCP servers
+# ---------------------------------------------------------------------------
+# Each server is one @deepseek-ai/dsh-mcp-client plugin row.
+# Tools surface to the model as  mcp__<serverName>__<toolName>.
+# Pinned versions keep a re-install reproducible; bump deliberately.
+- insert:
+    # --- Playwright (browser automation / UI checks) -------------------
+    # Official package: @playwright/mcp  (microsoft/playwright-mcp)
+    # --headless      : no window, required on a server / in CI
+    # --isolated      : throwaway in-memory profile, no persisted logins
+    # --allowed-origins: keep the agent's browser pointed at the local test
+    #   app. NOTE (upstream): this is a convenience fence, not a security
+    #   boundary -- it does not constrain redirects. Real isolation comes
+    #   from the container/VM the harness runs in.
+    - id: mcp-playwright
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: playwright
+        transport: stdio
+        command: npx
+        args:
+          - '-y'
+          - '@playwright/mcp@0.0.83'
+          - '--headless'
+          - '--isolated'
+          - '--browser=chromium'
+          - '--allowed-origins=http://127.0.0.1:8787;http://localhost:8787'
+          - '--output-dir=security/findings/playwright'
+        toolCallTimeoutMs: 120000
+
+    # --- Firecrawl (search / scrape / crawl) ---------------------------
+    # Official package: firecrawl-mcp  (firecrawl/firecrawl-mcp-server)
+    # Key comes from .env -> FIRECRAWL_API_KEY. dsh scrubs ambient *KEY*
+    # variables from child processes, so it must be passed explicitly.
+    - id: mcp-firecrawl
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: firecrawl
+        transport: stdio
+        command: npx
+        args:
+          - '-y'
+          - 'firecrawl-mcp@3.36.0'
+        env:
+          FIRECRAWL_API_KEY: !!js process.env.FIRECRAWL_API_KEY
+          # Uncomment to point at a self-hosted Firecrawl instead of the cloud:
+          # FIRECRAWL_API_URL: http://127.0.0.1:3002
+        toolCallTimeoutMs: 120000
